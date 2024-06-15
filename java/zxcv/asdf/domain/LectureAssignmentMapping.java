@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Data
+@Getter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -15,10 +15,18 @@ public class LectureAssignmentMapping {
     private Long id;
 
     @ManyToOne
+    @JoinColumn(name = "user_token", nullable = false)
+    private User user;
+
+    @ManyToOne
     @JoinColumn(name = "lecture_id", nullable = false)
     private Lecture lecture;
 
     @ManyToOne
     @JoinColumn(name = "lecture_assignment_id", nullable = false)
     private LectureAssignment lectureAssignment;
+
+    public Long getLectureAssignmentId() {
+        return lectureAssignment.getId();
+    }
 }

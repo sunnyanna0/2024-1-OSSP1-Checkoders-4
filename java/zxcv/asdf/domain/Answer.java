@@ -1,13 +1,11 @@
 package zxcv.asdf.domain;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 @Entity
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -16,6 +14,8 @@ public class Answer {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    private Boolean correct;
 
     private String answerText;
 
@@ -27,6 +27,4 @@ public class Answer {
     @JoinColumn(name = "assignment_id", nullable = false)
     private LectureAssignment assignment;
 
-    private String result;
-    private String gpt_feedback;
 }

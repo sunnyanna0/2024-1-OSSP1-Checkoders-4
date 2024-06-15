@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Data
+@Getter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -24,7 +24,5 @@ public class Team {
     @JoinColumn(name = "lecture_id", nullable = false)
     private Lecture lecture;
 
-    public Long getTeamId() {
-        return team_id;
-    }
+    private String list_name;
 }

@@ -9,7 +9,8 @@ import lombok.*;
 import java.util.List;
 
 @Entity
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -22,6 +23,9 @@ public class Lecture {
     private String name;
 
     private String course;
+
+    private String madeby;
+    private String madeby_name;
 
     @OneToMany(mappedBy = "lecture")
     private List<Enrollment> enrollments;

@@ -1,16 +1,15 @@
 package zxcv.asdf.domain;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.BitSet;
 import java.util.List;
 
 @Entity
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,8 +18,11 @@ public class LectureAssignment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
     private String title;
+
     private String description;
+
 
     @ManyToOne
     @JoinColumn(name = "lecture_id", nullable = false)
@@ -31,9 +33,7 @@ public class LectureAssignment {
 
     private LocalDateTime deadline;
 
-    @ManyToOne
-    @JoinColumn(name = "User_token", nullable = false)
-    private User user;
+    private Boolean correct;
 
     private String hwTest1;
     private String hwTestAnswer1;
@@ -45,4 +45,5 @@ public class LectureAssignment {
     private String hwTestAnswer4;
     private String hwTest5;
     private String hwTestAnswer5;
+
 }

@@ -3,14 +3,12 @@ package zxcv.asdf.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import zxcv.asdf.domain.Enrollment;
-import zxcv.asdf.domain.Lecture;
-import zxcv.asdf.domain.LectureAssignment;
-import zxcv.asdf.domain.User;
-import zxcv.asdf.repository.EnrollmentRepository;
-import zxcv.asdf.repository.LectureAssignmentRepository;
-import zxcv.asdf.repository.LectureRepository;
-import zxcv.asdf.repository.UserRepository;
+import zxcv.asdf.DTO.AssignmentDTO;
+import zxcv.asdf.DTO.LectureDTO;
+import zxcv.asdf.DTO.UserDTO;
+import zxcv.asdf.DTO.page2_lecture;
+import zxcv.asdf.domain.*;
+import zxcv.asdf.repository.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,22 +18,36 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserService {
 
+    private final TeamRepository teamRepository;
+    private final LectureAssignmentMappingRepository lectureAssignmentMappingRepository;
     private final LectureAssignmentRepository lectureAssignmentRepository;
     private final LectureRepository lectureRepository;
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
 
+    private AssignmentDTO convertToDTO(LectureAssignment assignment) {
+        return AssignmentDTO.builder()
+                .title(assignment.getTitle())
+                .description(assignment.getDescription())
+                .deadline(assignment.getDeadline())
+                .isDone(assignment.getCorrect())
+                .build();
+    }
     @Transactional
     public User addUser(User user) {
-        Optional<User> existingUser = userRepository.findByToken(user.getToken());
+        Optional<User> existingUser = userRepository.findById(user.getToken());
         return existingUser.orElseGet(() -> userRepository.save(user));
     }
 
     public User getUser(String token) {
-        return userRepository.findById(token).orElse(null);
+        return userRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
     public Lecture addLecture(Lecture lecture) {
+        User user = userRepository.findByToken(lecture.getMadeby())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        lecture.setMadeby_name(user.getName());
         return lectureRepository.save(lecture);
     }
 
@@ -52,6 +64,57 @@ public class UserService {
         return lectureRepository.findAll();
     }
 
+    public LectureAssignment getLectureAssignmentByLectureId(Long lectureId) {
+        return lectureAssignmentRepository.findByLectureId(lectureId)
+                .orElseThrow(() -> new RuntimeException("Lecture Assignment not found"));
+    }
+
+    public page2_lecture getPage2Lecture(String token, Long lectureId) {
+        Long teamId = teamRepository.findTeamIdByLectureIdAndToken(lectureId, token);
+
+        List<String> teamMemberTokens = teamRepository.findUserTokensByLectureIdAndTeamId(lectureId, teamId);
+        List<User> teamMembers = userRepository.findAllByTokenIn(teamMemberTokens);
+
+        // Convert teamMembers to UserDTO
+        List<UserDTO> teamMemberDTOs = teamMembers.stream()
+                .map(user -> UserDTO.builder()
+                        .token(user.getToken())
+                        .name(user.getName())
+                        .build())
+                .collect(Collectors.toList());
+
+        // Get lecture assignments
+        List<LectureAssignmentMapping> allMappings = lectureAssignmentMappingRepository.findByLectureId(lectureId);
+
+        List<Long> userAssignmentIds = allMappings.stream()
+                .filter(mapping -> mapping.getUser().getToken().equals(token))
+                .map(LectureAssignmentMapping::getLectureAssignmentId)
+                .collect(Collectors.toList());
+
+        List<Long> otherAssignmentIds = allMappings.stream()
+                .filter(mapping -> !mapping.getUser().getToken().equals(token))
+                .map(LectureAssignmentMapping::getLectureAssignmentId)
+                .collect(Collectors.toList());
+
+        List<LectureAssignment> userAssignments = lectureAssignmentRepository.findAllById(userAssignmentIds);
+        List<LectureAssignment> otherAssignments = lectureAssignmentRepository.findAllById(otherAssignmentIds);
+
+        List<AssignmentDTO> userAssignmentDTOs = userAssignments.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+
+        List<AssignmentDTO> otherAssignmentDTOs = otherAssignments.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+
+        return page2_lecture.builder()
+                .task(userAssignmentDTOs)
+                .exercise(otherAssignmentDTOs)
+                .teamMembers(teamMemberDTOs)  // Changed to use teamMemberDTOs
+                .build();
+    }
+
+
     public Enrollment addEnrollment(Enrollment enrollment) {
         return enrollmentRepository.save(enrollment);
     }
@@ -60,13 +123,26 @@ public class UserService {
         return enrollmentRepository.findAll();
     }
 
-    public List<Lecture> getLecturesByUserToken(String token) {
-        List<Enrollment> enrollments = enrollmentRepository.findByUserToken(token);
-        return enrollments.stream()
-                .map(Enrollment::getLecture)
-                .collect(Collectors.toList());
+
+    public List<Lecture> getLecturesByUserToken(String token, String name) {
+        return lectureRepository.findLecturesByUserToken(token, name);
     }
-    public LectureAssignment addLectureAssignment(LectureAssignment lectureAssignment) {
-        return lectureAssignmentRepository.save(lectureAssignment);
+
+    public LectureAssignment addLectureAssignment(String token,LectureAssignment lectureAssignment) {
+        lectureAssignmentRepository.save(lectureAssignment);
+        LectureAssignmentMapping lectureAssignmentMapping= LectureAssignmentMapping.builder()
+                .user(userRepository.findByToken(token).orElseThrow(() -> new RuntimeException("User not found")))
+                .lecture(lectureAssignment.getLecture())
+                .lectureAssignment(lectureAssignment)
+                .build();
+        lectureAssignmentMappingRepository.save(lectureAssignmentMapping);
+        return lectureAssignment;
     }
+    public LectureAssignment getLectureAssignmentById(Long lectureAssignmentId) {
+        return lectureAssignmentRepository.findById(lectureAssignmentId)
+                .orElseThrow(() -> new RuntimeException("Lecture Assignment not found"));
+    }
+
 }
+
+

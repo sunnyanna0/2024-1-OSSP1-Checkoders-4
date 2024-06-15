@@ -11,7 +11,9 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class AssignmentListDTO {
-    private List<AssignmentDTO> task;           // 과제 리스트
-    private List<AssignmentDTO> exercise;  // 학생들이 제출한 문제 리스트
+public class page5_randomTeam_2 {
+    private Long lecture_id;
+    private String token;
+
+    private List<page5_list> memberList;
 }

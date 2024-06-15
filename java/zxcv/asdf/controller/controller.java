@@ -11,11 +11,9 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
-import zxcv.asdf.DTO.AssignmentRequestDTO;
-import zxcv.asdf.domain.Enrollment;
-import zxcv.asdf.domain.Lecture;
-import zxcv.asdf.domain.LectureAssignment;
-import zxcv.asdf.domain.User;
+
+import zxcv.asdf.DTO.*;
+import zxcv.asdf.domain.*;
 import zxcv.asdf.service.*;
 
 import java.io.IOException;
@@ -25,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @RestController
@@ -42,6 +41,8 @@ public class controller {
     private final UserService userService;
     private final CodeFeedbackService codeFeedbackService;
     private final RandomTeamService randomTeamService;
+    private final LectureAssignmentService lectureAssignmentService;
+    private final AnswerService answerService;
 
     @GetMapping("/login")
     public void login(@RequestParam String code, HttpServletResponse response) {
@@ -84,28 +85,51 @@ public class controller {
                     .name(name)
                     .build();
             userService.addUser(user);
-            response.sendRedirect("http://localhost:3000/main?userId=" + token);
+            response.sendRedirect("http://localhost:3000/main?usertoken=" + token+"&access_token="+accessToken);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-
-    @PostMapping("/createuser")
-    public User createUser(@RequestParam String token,@RequestParam String name) {
-        // 임의로 사용자 정보를 설정하여 User 객체를 생성합니다.
-        User user = User.builder()
+    @PostMapping("/{token}/{name}/dummy_user")
+    public void dummy_user(@PathVariable String token,@PathVariable String name){
+        User user= User.builder()
                 .token(token)
                 .name(name)
                 .build();
-        return userService.addUser(user);
-    }
+        userService.addUser(user);
 
+    }
+    @GetMapping("/{token}/mainpage")
+    public page1_main mainpage(@PathVariable String token) {
+        User user = userService.getUser(token);
+        String name = user.getName();
+        List<Lecture> lectures = userService.getLecturesByUserToken(token, name);
+
+        List<LectureDTO> lectureDTOs = lectures.stream()
+                .map(lecture -> LectureDTO.builder()
+                        .lectureId(lecture.getId())
+                        .name(lecture.getName())
+                        .madeby(lecture.getMadeby())
+                        .madeby_name(lecture.getMadeby_name())
+                        .course(lecture.getCourse())
+                        .build())
+                .collect(Collectors.toList());
+
+        return page1_main.builder()
+                .token(token)
+                .name(userService.getUser(token).getName())
+                .lectures(lectureDTOs)
+                .build();
+    }
     @PostMapping("/{token}/createlecture")
     public List<Lecture> createLecture(@PathVariable String token, @RequestParam String lectureName,@RequestParam String course) {
         User user = userService.getUser(token);
+        String name = user.getName();
         Lecture lecture = Lecture.builder()
                 .name(lectureName)
                 .course(course)
+                .madeby(token)
+                .madeby_name(name)
                 .build();
         userService.addLecture(lecture);
         Enrollment enrollment = Enrollment.builder()
@@ -114,100 +138,123 @@ public class controller {
                 .build();
         userService.addEnrollment(enrollment);
 
-        return userService.getLecturesByUserToken(user.getToken());
+        List<Lecture> lectures = userService.getLecturesByUserToken(token, name);
+
+        return userService.getLecturesByUserToken(token, name);
+    }
+
+    @GetMapping("/{token}/getlectures")
+    public List<Lecture> getLectures(@PathVariable String token) {
+        User user = userService.getUser(token);
+        String name = user.getName();
+        return userService.getLecturesByUserToken(token, name);
     }
 
     @PostMapping("/{token}/participate")
-    public List<Lecture> participate(@PathVariable String token, @RequestParam String lectureName) {
+    public page1_main participate(@PathVariable String token, @RequestParam String lectureName) {
         User user = userService.getUser(token);
+        String name = user.getName();
         Lecture lecture = userService.getLectureByName(lectureName);
         Enrollment enrollment = Enrollment.builder()
                 .user(user)
                 .lecture(lecture)
                 .build();
         userService.addEnrollment(enrollment);
-        return userService.getLecturesByUserToken(user.getToken());
+
+        // 참여 후 메인 페이지로 돌아가기 위해서 다시 강의 목록 가져오기
+        List<Lecture> lectures = userService.getLecturesByUserToken(token, name);
+
+        List<LectureDTO> lectureDTOs = lectures.stream()
+                .map(lec -> {
+                    LectureAssignment assignment = userService.getLectureAssignmentByLectureId(lec.getId());
+                    return LectureDTO.builder()
+                            .lectureId(lec.getId())
+                            .name(lec.getName())
+                            .madeby(lec.getMadeby())
+                            .madeby_name(userService.getUser(lec.getMadeby()).getName())
+                            .course(lec.getCourse())
+                            .deadline(assignment.getDeadline())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return page1_main.builder()
+                .token(token)
+                .name(userService.getUser(token).getName())
+                .lectures(lectureDTOs)
+                .build();
+    }
+
+    @GetMapping("/{token}/{lectureId}/lecturepage")
+    public page2_lecture lecturepage(@PathVariable String token, @PathVariable Long lectureId) {
+        return userService.getPage2Lecture(token, lectureId);
     }
 
     @PostMapping("/{token}/{lectureId}/createAssignment")
-    public LectureAssignment createAssignment(@PathVariable String token,
-                                              @PathVariable Long lectureId,
-                                              @RequestBody AssignmentRequestDTO assignmentRequestDTO) {
-        // 강의를 찾거나 예외를 던짐
+    public page2_lecture createAssignment(@PathVariable String token,
+                                          @PathVariable Long lectureId,
+                                          @RequestBody page4_makeProb page4_makeProb) {
+
         Lecture lecture=userService.getLectureById(lectureId);
 
-        // 새로운 과제 생성
-        LectureAssignment lectureAssignment = LectureAssignment.builder()
-                .user(userService.getUser(token))
-                .title(assignmentRequestDTO.getTitle())
-                .description(assignmentRequestDTO.getDescription())
-                .deadline(assignmentRequestDTO.getDeadline())
-                .hwTest1(assignmentRequestDTO.getHwTest1())
-                .hwTestAnswer1(assignmentRequestDTO.getHwTestAnswer1())
-                .hwTest2(assignmentRequestDTO.getHwTest2())
-                .hwTestAnswer2(assignmentRequestDTO.getHwTestAnswer2())
-                .hwTest3(assignmentRequestDTO.getHwTest3())
-                .hwTestAnswer3(assignmentRequestDTO.getHwTestAnswer3())
-                .hwTest4(assignmentRequestDTO.getHwTest4())
-                .hwTestAnswer4(assignmentRequestDTO.getHwTestAnswer4())
-                .hwTest5(assignmentRequestDTO.getHwTest5())
-                .hwTestAnswer5(assignmentRequestDTO.getHwTestAnswer5())
+        LectureAssignment lectureAssignment=LectureAssignment.builder()
+                .title(page4_makeProb.getTitle())
+                .description(page4_makeProb.getDescription())
                 .lecture(lecture)
+                .correct(false)
+                .deadline(page4_makeProb.getDeadline())
+                .hwTest1(page4_makeProb.getHwTest1())
+                .hwTestAnswer1(page4_makeProb.getHwTestAnswer1())
+                .hwTest2(page4_makeProb.getHwTest2())
+                .hwTestAnswer2(page4_makeProb.getHwTestAnswer2())
+                .hwTest3(page4_makeProb.getHwTest3())
+                .hwTestAnswer3(page4_makeProb.getHwTestAnswer3())
+                .hwTest4(page4_makeProb.getHwTest4())
+                .hwTestAnswer4(page4_makeProb.getHwTestAnswer4())
+                .hwTest5(page4_makeProb.getHwTest5())
+                .hwTestAnswer5(page4_makeProb.getHwTestAnswer5())
                 .build();
 
-        return userService.addLectureAssignment(lectureAssignment);
-    }
-    @GetMapping("/{lectureId}/getlectureassignment")
-    public List<LectureAssignment> getLectureAssignment(@PathVariable Long lectureId) {
-        return userService.getLectureById(lectureId).getAssignments();
+        userService.addLectureAssignment(token,lectureAssignment);
+        return userService.getPage2Lecture(token, lectureId);
     }
 
-    @PostMapping("/submit")
-    public String submit(@RequestBody String sourceCode,@RequestParam String args,@RequestParam String xOutput) throws Exception {
-        Path tempDir = Files.createTempDirectory("compile_output");
-        String code=extractJavaCode(URLDecoder.decode(sourceCode, StandardCharsets.UTF_8.toString()));
-        String[] arguments = extractArgs(URLDecoder.decode(args, StandardCharsets.UTF_8.toString())).split("\\s+");
-        String expectedOutput = extractXOutput(URLDecoder.decode(xOutput, StandardCharsets.UTF_8.toString()));
-        try {
-            boolean result = checkingService.compile(code, tempDir);
-            if (result) {
-                System.out.println("컴파일 성공");
-                String output = checkingService.test(tempDir,arguments).trim();
-                if (expectedOutput.equals(output)) {
-                    System.out.println("출력:"+output+"  정답:"+expectedOutput);
-                }
-            } else {
-                System.out.println("Compilation failed");
-            }
-        } finally {
-            Files.walk(tempDir).sorted(Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.delete(path);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-        }
-        return codeFeedbackService.getCodeFeedback(code).replace("\n", "<br>");
+    @GetMapping("/{token}/{lectureId}/{lectureAssignmentId}/assignmentpage")
+    public page3_solve_1 assignmentpage(@PathVariable String token,
+                                        @PathVariable Long lectureId,
+                                        @PathVariable Long lectureAssignmentId) {
+        // LectureAssignment 정보를 가져옵니다.
+        LectureAssignment lectureAssignment = userService.getLectureAssignmentById(lectureAssignmentId);
+
+        // page3_solve_1 객체에 필요한 정보를 설정합니다.
+        page3_solve_1 solvePage = page3_solve_1.builder()
+                .lectureId(lectureAssignment.getLecture().getId())
+                .title(lectureAssignment.getTitle())
+                .description(lectureAssignment.getDescription())
+                .hwTest1(lectureAssignment.getHwTest1())
+                .hwTestAnswer1(lectureAssignment.getHwTestAnswer1())
+                .build();
+
+        return solvePage;
     }
 
-    private String extractJavaCode(String fullCode) {
-        int argsIndex = fullCode.indexOf("&args=");
-        if (argsIndex != -1) {
-            return fullCode.substring("sourceCode=".length(), argsIndex);
-        }
-        return fullCode.substring("sourceCode=".length());
-    }
-    public String extractArgs(String args) {
-        if (args.startsWith("args=")) {
-            return args.substring("args=".length());
-        }
-        return args; // 이미 형식이 맞는 경우 그대로 반환
-    }
-    public String extractXOutput(String xOutput) {
-        if (xOutput.startsWith("xOutput=")) {
-            return xOutput.substring("xOutput=".length());
-        }
-        return xOutput; // 이미 형식이 맞는 경우 그대로 반환
+    @PostMapping("/{userToken}/{assignmentId}/saveAndSubmit")
+    public ResponseEntity<String> saveAndSubmitAnswer(@PathVariable String userToken,
+                                                      @PathVariable Long assignmentId,
+                                                      @RequestBody page3_solve_2 answerDTO) throws Exception {
+        User user = userService.getUser(userToken);
+        LectureAssignment assignment = lectureAssignmentService.getAssignmentById(assignmentId);
+
+        Answer answer = Answer.builder()
+                .answerText(answerDTO.getAnswer_text())
+                .user(user)
+                .assignment(assignment)
+                .build();
+
+        Answer savedAnswer = answerService.saveAnswer(answer);
+
+        String result = checkingService.submit(answerDTO.getAnswer_text(), assignmentId, savedAnswer);
+
+        return ResponseEntity.ok(result);
     }
 }
